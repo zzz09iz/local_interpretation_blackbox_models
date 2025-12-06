@@ -1,0 +1,139 @@
+# Packages
+library(tidyverse)
+library(janitor)
+library(caret)
+library(ggplot2)
+library(corrplot)
+
+# Load & clean names
+data <- read.csv("online_shoppers_intention.csv")
+data <- clean_names(data)
+
+# Convert variable types
+data <- data %>%
+  mutate(
+    revenue = factor(revenue, levels = c(FALSE, TRUE), labels = c("No_Purchase", "Purchase")),
+    month = factor(month,
+                   levels = c("Feb", "Mar", "May", "June", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
+                   ordered = TRUE),
+    visitor_type = factor(visitor_type,
+                          levels = c("New_Visitor", "Returning_Visitor", "Other"),
+                          ordered = TRUE),
+    operating_systems = factor(operating_systems),
+    browser = factor(browser),
+    region = factor(region),
+    traffic_type = factor(traffic_type),
+    weekend = factor(weekend)
+  )
+
+# Missing values check
+data %>%
+  summarise(across(everything(), ~sum(is.na(.)))) # no missing values
+
+# Class distribution check
+table(data$revenue)
+prop.table(table(data$revenue)) # 85% no purchase, 15% purchase
+
+# Visualize class distribution
+ggplot(data, aes(x = revenue, fill = revenue)) +
+  geom_bar() +
+  labs(title = "Distribution of Purchase Outcomes",
+       x = "Purchase Outcome",
+       y = "Count") +
+  scale_fill_manual(values = c("#999999", "#E69F00")) +
+  theme_minimal()
+
+# Boxplots of numeric variables to check for outliers
+num_var <- data %>%
+  select(
+    administrative, administrative_duration,
+    informational, informational_duration,
+    product_related, product_related_duration,
+    bounce_rates, exit_rates,
+    page_values, special_day
+  )
+
+numeric_vars_long <- num_var %>%
+  pivot_longer(cols = everything(), names_to = "variable", values_to = "value")
+
+ggplot(numeric_vars_long, aes(x = variable, y = value)) +
+  geom_boxplot(outlier.color = "red", outlier.alpha = 0.5) +
+  coord_flip() +
+  labs(title = "Outlier Check Across Numeric Variables",
+       x = "Variable", y = "Value") +
+  theme_minimal()
+
+# Define outliers
+iqr_outliers <- function(x) {
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  
+  lower <- Q1 - 1.5 * IQR
+  upper <- Q3 + 1.5 * IQR
+  
+  (x < lower | x > upper)
+}
+
+outlier_counts <- sapply(num_var, function(col) sum(iqr_outliers(col)))
+
+outlier_counts
+
+outlier_percent <- sapply(num_var, function(col) {
+  mean(iqr_outliers(col)) * 100
+})
+
+outlier_percent
+
+outlier_table <- data.frame(
+  n_outliers = outlier_counts,
+  pct_outliers = round(outlier_percent, 2)
+)
+
+outlier_table
+
+# Historgrams of numeric variables
+for (v in names(num_var)) {
+  print(
+    ggplot(data, aes(x = .data[[v]])) +
+      geom_histogram(fill = "#1f77b4") +
+      labs(title = paste("Histogram of", v), x = v, y = "Count") +
+      theme_minimal()
+  )
+}
+
+# Month of visits
+ggplot(data, aes(x = month, fill = revenue)) +
+  geom_bar(position = "fill") +
+  labs(title = "Purchase Rate by Month",
+       y = "Proportion") +
+  scale_fill_manual(values = c("#999999", "#E69F00")) +
+  theme_minimal()
+
+# Visitor types
+ggplot(data, aes(x = visitor_type, fill = revenue)) +
+  geom_bar(position = "fill") +
+  labs(title = "Purchase Rate by Visitor Type") +
+  scale_fill_manual(values = c("#999999", "#E69F00")) +
+  theme_minimal()
+
+# Weekend or not
+ggplot(data, aes(x = weekend, fill = revenue)) +
+  geom_bar(position = "fill") +
+  labs(title = "Purchase Rate: Weekend vs Weekday") +
+  scale_fill_manual(values = c("#999999", "#E69F00")) +
+  theme_minimal()
+
+# Correlation analysis
+cor_matrix <- cor(num_var, method = "spearman")
+corrplot(cor_matrix, method = "color", type = "upper")
+
+# Stratified train-test split
+set.seed(123)
+train_index <- createDataPartition(data$revenue, p = 0.8, list = FALSE)
+
+train <- data[train_index, ]
+test  <- data[-train_index, ]
+
+prop.table(table(train$revenue))
+prop.table(table(test$revenue))
