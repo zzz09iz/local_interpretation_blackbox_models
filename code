@@ -4,6 +4,7 @@ library(janitor)
 library(caret)
 library(ggplot2)
 library(corrplot)
+library(ranger)
 
 # Load & clean names
 data <- read.csv("online_shoppers_intention.csv")
@@ -137,3 +138,33 @@ test  <- data[-train_index, ]
 
 prop.table(table(train$revenue))
 prop.table(table(test$revenue))
+
+# RANDOM FOREST (ranger)
+
+set.seed(123)
+rf_model <- ranger(
+  revenue ~ .,
+  data = train,
+  num.trees = 500,
+  probability = TRUE,   # so we get class probabilities
+  importance = "impurity"
+)
+
+# Predictions on test set
+rf_pred <- predict(rf_model, data = test)
+
+# Probabilities for positive class ("Purchase")
+rf_prob <- rf_pred$predictions[, "Purchase"]
+
+# Class predictions using 0.5 threshold
+rf_class <- ifelse(rf_prob > 0.5, "Purchase", "No_Purchase") |> 
+  factor(levels = levels(test$revenue))
+
+# Confusion matrix + metrics
+cm_rf <- confusionMatrix(rf_class, test$revenue, positive = "Purchase")
+cm_rf
+
+# AUC
+auc_rf <- roc(test$revenue, rf_prob)$auc
+auc_rf
+
