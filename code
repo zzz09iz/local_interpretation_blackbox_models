@@ -168,3 +168,64 @@ cm_rf
 auc_rf <- roc(test$revenue, rf_prob)$auc
 auc_rf
 
+
+## Shapley + iBreakdown
+
+# install.packages(c("DALEX", "iBreakDown"))
+library(DALEX)
+library(iBreakDown)
+
+train_x <- train %>% select(-revenue)
+train_y <- (train$revenue == "Purchase")
+
+predict_rf_prob <- function(model, newdata) {
+  predict(model, data = newdata)$predictions[, "Purchase"]
+}
+
+explainer_rf <- explain(
+  model            = rf_model,
+  data             = train_x,
+  y                = train_y,
+  predict_function = predict_rf_prob,
+  label            = "ranger RF revenue"
+)
+
+new_obs <- test %>% select(-revenue) %>% slice(1)
+
+bd <- local_attributions(explainer_rf, new_observation = new_obs) 
+plot(bd)
+
+shap <- local_attributions(explainer_rf, new_observation = new_obs, type = "shap")
+plot(shap)
+
+## LIME
+# install.packages("lime")
+library(lime)
+
+train_x <- train %>% select(-revenue)
+test_x  <- test  %>% select(-revenue)
+
+model_type.ranger <- function(x, ...) "classification"
+
+predict_model.ranger <- function(x, newdata, ...) {
+  preds <- predict(x, data = newdata)$predictions
+  as.matrix(preds)
+}
+
+explainer_lime <- lime(
+  x              = train_x,
+  model          = rf_model,
+  bin_continuous = TRUE
+)
+
+obs <- test_x[1, , drop = FALSE]
+
+explanation <- explain(
+  x               = obs,
+  explainer       = explainer_lime,
+  n_labels        = 1,     
+  n_features      = 5,      
+  kernel_width    = 0.75
+)
+
+plot_features(explanation)
